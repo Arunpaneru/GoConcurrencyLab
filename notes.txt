@@ -1,0 +1,139 @@
+concurrency vs. parallelism:
+
+Concurrency: Multiple tasks are in progress at the same time, but not necessarily executing at the same instant.
+             potentially interleaving their execution on a single CPU core.
+             Concurrency allows your program to switch between tasks and utilize waiting time (e.g., I/O wait) more efficiently,
+             keeping the application responsive and fast.
+
+Parallelism: Multiple tasks are executing simultaneously, literally at the same time, 
+             on different CPU cores.
+
+
+
+What Does go Do?
+go keyword is used to launch a goroutine. i.e it enables concurrency but doesn't gurantee concurrency.
+
+It means:
+    Your new goroutine might not run immediately
+    Or it might run after the current goroutine finishes
+    Or it might even finish before the line after the go statement runs (!)
+    Because everything is controlled by go scheduler.
+
+The Go runtime manages these goroutines on top of operating system threads,
+making them much more lightweight than traditional OS threads.
+
+Parallelism depends on:
+    Number of CPU cores
+    Value of GOMAXPROCS
+
+GOMAXPROCS defines the maximum number of operating system threads that can execute Go code simultaneously
+In other words, how many goroutines can run in parallel.
+
+Value for GOMAXPROCS:
+Any integer n >= 1
+Typical values:
+1: disables parallelism (useful for debugging concurrency bugs)
+runtime.NumCPU(): uses all CPU cores (this is the default since Go 1.5 befor 1 used to be default value)
+
+GOMAXPROCS=1, goroutines are concurrent, not parallel
+—because the Go scheduler switches between them, but only one runs at a time.
+
+Goroutine:
+goroutines let you structure your program for concurrency easily. 
+It executes concurrently with the rest of your program. executes doesn't mean it runs immediately
+If you run your Go program on a multi-core system with default settings (or by using runtime.GOMAXPROCS), 
+Go can schedule these goroutines in parallel across available CPU cores. 
+But even on a single core, concurrency ensures your tasks don’t block each other unnecessarily.
+
+Goroutines run in the same address space, so access to shared memory must be synchronized. 
+The sync package provides useful primitives,
+
+go f(x, y, z)
+The evaluation of f, x, y, and z happens in the current goroutine and the execution of f happens in the new goroutine.
+
+If you don’t prevent the main function from exiting (for example, by using time.Sleep or more robust solutions like sync.WaitGroup), 
+your program might end before the goroutines finish.
+
+Synchronization::
+Synchronization is how you coordinate access to shared resources or control the timing/order of goroutine execution.
+This usually means:
+    Making sure goroutines don’t step on each other’s toes (e.g., race conditions)
+    Making sure goroutines wait for others to finish
+
+Time.Sleep::
+
+Time.sleep is not a  robust synchronization apporoach.
+It pauses the current goroutine for at least the duration specified.or suspend th current go routine for specified time.
+so that during that time, the Go scheduler can run other goroutines,after the duration,
+the goroutine becomes eligible to run again
+
+Why Time.Sleep is not robust approach:
+Non-deterministic — The actual time a goroutine takes might change depending on:
+    OS scheduling
+    CPU load
+    Garbage collection
+Over-sleeping or under-sleeping:
+    Too short? Goroutine might not finish
+    Too long? Waste of time/resources
+
+Doesn't guarantee order or completion
+    Sleep doesn't track whether a goroutine is done, just pauses blindly
+
+
+WaitGroup::
+
+waitgroup is the robust approach to wait for multiple goroutines to finish. It has three methods:
+1. Add(n int):
+    Increments the internal counter by n. 
+    Typically, we call wg.Add(n) if we know we are going to start n new goroutines.
+2. Done():
+    Decrements the internal counter by 1. 
+    Typically call defer wg.Done() at the start of each goroutine that needs to be tracked.
+    using defer to ensure it should be executed even any error occur
+
+3. Wait():
+    Blocks execution until the counter becomes zero.
+    This is typically called in the main function or controller goroutine.
+    Purpose: "Wait here until all expected tasks/workers/goroutines get complete."
+
+Example:
+package main
+
+import (
+	"fmt"
+	"sync"
+	"time"
+)
+
+func worker(id int, wg *sync.WaitGroup) {
+	defer wg.Done() // Ensure that this signals task completion even if panic occurs
+
+	fmt.Printf("Worker %d starting\n", id)
+	time.Sleep(1 * time.Second) // Simulate work
+	fmt.Printf("Worker %d done\n", id)
+}
+
+func main() {
+	var wg sync.WaitGroup
+
+	numWorkers := 3
+	wg.Add(numWorkers) // Tell WaitGroup to wait for 3 workers
+
+	for i := 1; i <= numWorkers; i++ {
+		go worker(i, &wg) // Each goroutine gets a reference to wg
+	}
+
+	wg.Wait() // Block main goroutine until all workers are done
+	fmt.Println("All workers completed.")
+}
+
+if we call add() for n tasks then we must call done() for n tasks too. Neither less nor more are allowed.
+- less(done) == wait() will block forever causing deadlock.forever waiting to reach other count 0
+    runtime error occur with message :"fatal error: all goroutines are asleep - deadlock!"
+- more == counter will reach negative value, runtime error:panic: sync: negative WaitGroup counter
+
+| `Add()` calls | `Done()` calls | Result                         |
+| ------------- | -------------- | ------------------------------ |
+| Equal         | Equal          | Normal completion              |
+| More          | Less           | Deadlock — Wait blocks forever |
+| Less          | More           | Panic — negative counter       |
