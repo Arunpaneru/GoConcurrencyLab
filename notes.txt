@@ -137,3 +137,9 @@ if we call add() for n tasks then we must call done() for n tasks too. Neither l
 | Equal         | Equal          | Normal completion              |
 | More          | Less           | Deadlock — Wait blocks forever |
 | Less          | More           | Panic — negative counter       |
+
+Race Condition:
+It occurs when multiple threads try to access and manipulate the same data (memory address).
+Data rate detector is a tool in golang that is used for finding race condition in go code.
+A data race occurs when two or more go routines access the same variable/data(memory address) concurrently and at least one of the access is write operation.
+Mutex is used for solving the race condition occuring while multiple go routines concurrently access shared data. Mutex is provided by sync package.
